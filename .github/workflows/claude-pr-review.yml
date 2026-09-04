@@ -9,9 +9,10 @@
 #   claude-review-fork.yml  — pull_request_target, fork branches
 #
 # FORK SAFETY
-#   - The fork's code is never checked out and never executed. Claude reads
-#     the change through `gh pr diff`. The working directory holds the BASE
-#     branch only.
+#   - This workflow never checks out the fork's code itself. The action does
+#     fetch the PR head on its own (it restores base-branch Claude config
+#     paths first — see docs/security.md); what matters here is that WE do
+#     not hand it an untrusted ref, and nothing from the diff is executed.
 #   - MERGE_APP_ID / MERGE_APP_PRIVATE_KEY are optional. The fork caller does
 #     not pass them, so a fork-triggered run can never mint the merge app's
 #     token. It falls back to GITHUB_TOKEN, which is scoped to this repo.
@@ -73,12 +74,20 @@ jobs:
       verdict: ${{ steps.verdict.outputs.verdict }}
       reasons: ${{ steps.verdict.outputs.reasons }}
     steps:
-      # NOTE: no `ref:` here on purpose.
-      # Under pull_request_target this resolves to the BASE branch, which is
-      # trusted code. Do not add `ref: ${{ github.event.pull_request.head.sha }}`
-      # — that would check out the fork's code into a job that holds secrets.
+      # NEVER put `ref: ${{ github.event.pull_request.head.sha }}` here — that
+      # would hand an untrusted ref to a job that holds secrets.
       - uses: actions/checkout@v6
         with:
+          # In fork mode, check out the base COMMIT (detached HEAD) instead of
+          # landing on the base branch. The action later runs
+          # `git fetch origin pull/N/head:<head-branch>`, and when a fork's head
+          # branch has the same name as the base branch (e.g. a fork's own
+          # `develop`), git aborts with:
+          #   fatal: refusing to fetch into branch 'refs/heads/develop'
+          #          checked out at ...
+          # Detached HEAD has no branch checked out, so the fetch succeeds.
+          # Still the base commit — never the fork's.
+          ref: ${{ inputs.fork_mode && github.event.pull_request.base.sha || '' }}
           fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
@@ -101,13 +110,9 @@ jobs:
 
             You are the automated review gate for this repository.
 
-            IMPORTANT — how to read the change:
-            The working directory contains the BASE branch, NOT the PR's
-            version of the files. Use `gh pr diff` to read what changed and
-            `gh pr view` for the description. Files you read from disk are
-            useful for surrounding context and existing conventions, but they
-            are the base version — never assume a file on disk reflects the
-            PR. Do not run, build, install or execute anything from the diff.
+            Use `gh pr diff` to read what changed and `gh pr view` for the
+            description. Do not run, build, install or execute anything the
+            pull request supplies.
 
             Review this pull request thoroughly for:
 
