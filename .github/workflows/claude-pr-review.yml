@@ -31,6 +31,14 @@ on:
         description: "Claude model for the review"
         type: string
         default: "claude-sonnet-5"
+      max_turns:
+        description: |
+          Turn ceiling for the review. This is a cap, not a target — small PRs
+          finish well under it. 25 was too low for a 30-file / 3,400-line PR:
+          the review ran the full 3m44s and then died with
+          "Reached maximum number of turns" before writing its verdict.
+        type: number
+        default: 60
       fork_mode:
         description: |
           Set true when called from a pull_request_target workflow. The action's
@@ -114,6 +122,11 @@ jobs:
             description. Do not run, build, install or execute anything the
             pull request supplies.
 
+            Budget your turns. On a large diff, prioritise finding blocking
+            issues over exhaustive coverage, and ALWAYS leave enough turns to
+            post the summary and write the verdict file — a review that runs
+            out of turns before doing both is worth nothing.
+
             Review this pull request thoroughly for:
 
               1. Bugs, logic errors, and unhandled edge cases
@@ -150,7 +163,7 @@ jobs:
                 in the review and REJECT.
           claude_args: |
             --model ${{ inputs.model }}
-            --max-turns 25
+            --max-turns ${{ inputs.max_turns }}
             --allowedTools "Read,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment"
 
       - name: Read verdict
