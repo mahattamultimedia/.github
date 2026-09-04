@@ -30,6 +30,23 @@ on:
         description: "Claude model for the review"
         type: string
         default: "claude-sonnet-5"
+      fork_mode:
+        description: |
+          Set true when called from a pull_request_target workflow. The action's
+          OIDC -> GitHub-App token exchange rejects pull_request_target runs
+          (401 Invalid OIDC token), so the run-scoped GITHUB_TOKEN is supplied
+          directly instead. See docs/security.md in anthropics/claude-code-action.
+        type: boolean
+        default: false
+      external_authors:
+        description: |
+          Comma-separated usernames without write access on the base repo whose
+          PRs should still be reviewed. Only applied when fork_mode is true.
+          Leave empty if every fork PR author already has write access.
+          SECURITY: this bypasses the action's actor permission check. Only set
+          it for people you know, and keep auto_merge false.
+        type: string
+        default: ""
     secrets:
       ANTHROPIC_API_KEY:
         required: true
@@ -67,6 +84,12 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # On pull_request_target the app-token exchange returns 401, so hand
+          # the action the run-scoped token instead. Empty on normal
+          # pull_request runs, which keeps using the Claude GitHub App and
+          # keeps comments authored by claude[bot].
+          github_token: ${{ inputs.fork_mode && github.token || '' }}
+          allowed_non_write_users: ${{ inputs.fork_mode && inputs.external_authors || '' }}
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
